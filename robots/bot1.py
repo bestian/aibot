@@ -3,6 +3,8 @@
 import math
 import pygame
 
+bot_name = '實驗者1號'
+
 def bot_logic(bot, game_state):
     """
     机器人逻辑：通过寻找最近的敌人，调整方向并根据距离发动攻击。
