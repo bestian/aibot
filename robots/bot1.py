@@ -3,7 +3,7 @@
 import math
 import pygame
 
-bot_name = '實驗者1號'
+bot_name = 'Drone #1'
 
 def bot_logic(bot, game_state):
     """
