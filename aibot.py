@@ -281,12 +281,18 @@ def draw_button(text, rect, inactive_color, active_color, font, mouse_pos):
 # Function to create bots ensuring they don't overlap initially
 def create_bots():
     global bot1, bot2
-    positions = [
-        (100, HEIGHT // 2),
-        (WIDTH - 100, HEIGHT // 2)
-    ]
-    bot1 = Bot(*positions[0], BLUE, bot_number=1)
-    bot2 = Bot(*positions[1], GREEN, bot_number=2)
+    
+    # 隨機生成兩個機器人的起始位置
+    position1 = (random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50))
+    position2 = (random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50))
+    
+    # 防止兩個機器人生成的位置太接近
+    while math.hypot(position1[0] - position2[0], position1[1] - position2[1]) < 100:
+        position2 = (random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50))
+    
+    bot1 = Bot(*position1, BLUE, bot_number=1)
+    bot2 = Bot(*position2, GREEN, bot_number=2)
+    
     bots.add(bot1, bot2)
 
 # Game state

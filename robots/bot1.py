@@ -1,9 +1,4 @@
-# bot1.py (Module)
-
-import math
-import pygame
-
-bot_name = 'Drone #1'
+def bot_name = 'Drone1'
 
 def bot_logic(bot, game_state):
     """
@@ -25,7 +20,7 @@ def bot_logic(bot, game_state):
                 min_distance = distance
                 nearest_bot = other_bot
 
-    # 如果找到最近的机器人，调整方向并决定行为
+    # 如果找到最近的敌方机器人，调整方向并决定行为
     if nearest_bot:
         # 计算目标与当前机器人之间的方向向量
         dx = nearest_bot.rect.centerx - bot.rect.centerx
@@ -43,12 +38,13 @@ def bot_logic(bot, game_state):
             if min_distance > 50:
                 bot.move(bot.direction.x, bot.direction.y)
 
-        # 根据距离选择合适的攻击方式
-        if min_distance < 100 and bot.weapon_cooldowns['zap'] <= 0:
-            bot.fire_zap()
-        elif min_distance < 200 and bot.weapon_cooldowns['grenade'] <= 0:
-            bot.throw_grenade()
-        elif min_distance < 300 and bot.weapon_cooldowns['missile'] <= 0:
-            bot.fire_missile()
-        elif bot.weapon_cooldowns['energy_mine'] <= 0:
-            bot.place_energy_mine()
+        # 根据距离选择合适的攻击方式，确保机器人的朝向对准目标
+        if abs(angle_diff) < 5:  # 只有在角度差小于 5 度时才允许发射武器
+            if min_distance < 100 and bot.weapon_cooldowns['zap'] <= 0:
+                bot.fire_zap()
+            elif min_distance < 200 and bot.weapon_cooldowns['grenade'] <= 0:
+                bot.throw_grenade()
+            elif min_distance < 300 and bot.weapon_cooldowns['missile'] <= 0:
+                bot.fire_missile()
+            elif bot.weapon_cooldowns['energy_mine'] <= 0:
+                bot.place_energy_mine()
