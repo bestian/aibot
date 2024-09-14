@@ -7,6 +7,8 @@ import importlib.util
 from pygame.locals import *
 from tkinter import Tk, filedialog
 
+from robots.bot1 import bot_logic
+
 # Initialize PyGame
 pygame.init()
 
@@ -38,8 +40,8 @@ STATE_GAME = 'game'
 current_state = STATE_MENU
 
 # Bot AI modules (initially None)
-bot1_ai_module = None
-bot2_ai_module = None
+bot1_ai_module = bot_logic
+bot2_ai_module = bot_logic
 
 # Function to load AI scripts dynamically
 def load_ai(bot_number):
@@ -52,13 +54,17 @@ def load_ai(bot_number):
     if filepath:
         module_name = f'bot{bot_number}_loaded'
         spec = importlib.util.spec_from_file_location(module_name, filepath)
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)
-            print(f"Loaded Bot{bot_number} AI from {filepath}")
-            return module.bot_logic
-        except Exception as e:
-            print(f"Failed to load Bot{bot_number} AI: {e}")
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(module)
+                print(f"Loaded Bot{bot_number} AI from {filepath}")
+                return module.bot_logic
+            except Exception as e:
+                print(f"Failed to load Bot{bot_number} AI: {e}")
+                return None
+        else:
+            print(f"Failed to load module spec for Bot{bot_number}")
             return None
     return None
 
