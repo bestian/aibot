@@ -3,11 +3,9 @@ import sys
 import math
 import random
 import os
-
-# 加载bot1.py中的逻辑
-import sys
-sys.path.append('./robots')
-from bot1 import bot_logic
+import importlib.util
+from pygame.locals import *
+from tkinter import Tk, filedialog
 
 # Initialize PyGame
 pygame.init()
@@ -23,13 +21,56 @@ clock = pygame.time.Clock()
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+GRAY = (100, 100, 100)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
 
-# Bot class
+# Sprite groups
+bots = pygame.sprite.Group()
+missiles = pygame.sprite.Group()
+zaps = pygame.sprite.Group()
+grenades = pygame.sprite.Group()
+energy_mines = pygame.sprite.Group()
+
+# Game states
+STATE_MENU = 'menu'
+STATE_GAME = 'game'
+current_state = STATE_MENU
+
+# Bot AI modules (initially None)
+bot1_ai_module = None
+bot2_ai_module = None
+
+# Function to load AI scripts dynamically
+def load_ai(bot_number):
+    Tk().withdraw()  # Hide the root window
+    filepath = filedialog.askopenfilename(
+        initialdir='./robots',
+        title=f"Select AI script for Bot{bot_number}",
+        filetypes=(("Python Files", "*.py"),)
+    )
+    if filepath:
+        module_name = f'bot{bot_number}_loaded'
+        spec = importlib.util.spec_from_file_location(module_name, filepath)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+            print(f"Loaded Bot{bot_number} AI from {filepath}")
+            return module.bot_logic
+        except Exception as e:
+            print(f"Failed to load Bot{bot_number} AI: {e}")
+            return None
+    return None
+
+# Bot class with visual enhancements
 class Bot(pygame.sprite.Sprite):
-    def __init__(self, x, y, color):
+    def __init__(self, x, y, color, bot_number):
         super().__init__()
-        self.image = pygame.Surface((20, 20))
-        self.image.fill(color)
+        self.bot_number = bot_number
+        self.base_image = pygame.Surface((40, 40), pygame.SRCALPHA)
+        self.color = color
+        self.draw_bot()
+        self.image = self.base_image.copy()
         self.rect = self.image.get_rect(center=(x, y))
         self.speed = 5
         self.direction = pygame.math.Vector2(1, 0)  # Facing right initially
@@ -42,6 +83,22 @@ class Bot(pygame.sprite.Sprite):
             'grenade': 0,
             'energy_mine': 0
         }
+        self.bot_logic = bot1_ai_module if bot_number == 1 else bot2_ai_module
+
+    def draw_bot(self):
+        # Draw body
+        pygame.draw.circle(self.base_image, self.color, (20, 20), 20)
+        # Draw eyes
+        pygame.draw.circle(self.base_image, WHITE, (12, 14), 4)  # Left eye
+        pygame.draw.circle(self.base_image, WHITE, (28, 14), 4)  # Right eye
+        # Draw gun barrel (a line indicating direction)
+        pygame.draw.line(self.base_image, GRAY, (20, 20), (35, 20), 3)
+
+    def update_image(self):
+        # Rotate the base image according to direction
+        angle = -self.direction.angle_to(pygame.math.Vector2(1, 0))
+        self.image = pygame.transform.rotate(self.base_image, angle)
+        self.rect = self.image.get_rect(center=self.rect.center)
 
     def update(self):
         # Reduce cooldowns
@@ -49,22 +106,36 @@ class Bot(pygame.sprite.Sprite):
             if self.weapon_cooldowns[weapon] > 0:
                 self.weapon_cooldowns[weapon] -= 1
 
-        # 执行机器人逻辑
-        bot_logic(self, game_state)
+        # Execute bot logic
+        if self.bot_logic:
+            self.bot_logic(self, game_state)
+
+        self.update_image()
 
     def move(self, dx, dy):
         if self.fuel <= 0:
             return
-        self.rect.x += dx * self.speed
-        self.rect.y += dy * self.speed
-        self.fuel -= 0.1 * self.speed
+        new_x = self.rect.x + dx * self.speed
+        new_y = self.rect.y + dy * self.speed
+        # Prevent moving out of bounds
+        new_x = max(0, min(WIDTH - self.rect.width, new_x))
+        new_y = max(0, min(HEIGHT - self.rect.height, new_y))
+        # Check for collision with other bots
+        temp_rect = self.rect.copy()
+        temp_rect.x = new_x
+        temp_rect.y = new_y
+        collided_bots = [bot for bot in bots if bot.rect.colliderect(temp_rect) and bot != self]
+        if not collided_bots:
+            self.rect.x = new_x
+            self.rect.y = new_y
+            self.fuel -= 0.1 * self.speed
 
     def turn(self, angle):
         self.direction = self.direction.rotate(angle)
 
     def fire_missile(self):
         if self.ammo >= 5 and self.weapon_cooldowns['missile'] <= 0:
-            missile = Missile(self.rect.centerx, self.rect.centery, self.direction)
+            missile = Missile(self.rect.centerx, self.rect.centery, self.direction, self)
             missiles.add(missile)
             self.ammo -= 5
             self.weapon_cooldowns['missile'] = 60  # Cooldown in frames
@@ -95,16 +166,17 @@ class Bot(pygame.sprite.Sprite):
         if self.health <= 0:
             self.kill()
 
-# Missile class
+# Missile class with increased speed and fuel deduction
 class Missile(pygame.sprite.Sprite):
-    def __init__(self, x, y, direction):
+    def __init__(self, x, y, direction, shooter):
         super().__init__()
         self.image = pygame.Surface((10, 5))
         self.image.fill((255, 0, 0))  # Red missile
         self.rect = self.image.get_rect(center=(x, y))
         self.direction = direction.normalize()
-        self.speed = 10
+        self.speed = 20  # Increased speed (twice as fast)
         self.range = 300  # Pixels missile can travel
+        self.shooter = shooter
 
     def update(self):
         self.rect.x += self.direction.x * self.speed
@@ -114,11 +186,14 @@ class Missile(pygame.sprite.Sprite):
             self.kill()
 
         # Check collision with bots
-        if pygame.sprite.spritecollideany(self, bots):
-            bot_hit = pygame.sprite.spritecollideany(self, bots)
-            if bot_hit != self:
-                bot_hit.take_damage(30)
+        hit_bots = pygame.sprite.spritecollide(self, bots, False)
+        for bot in hit_bots:
+            if bot != self.shooter:
+                bot.take_damage(30)
+                bot.fuel -= 10  # Deduct fuel
+                print(f"Bot{bot.bot_number} hit by missile! Fuel now: {bot.fuel}")
                 self.kill()
+                break
 
 # Zap class
 class Zap(pygame.sprite.Sprite):
@@ -139,18 +214,19 @@ class Zap(pygame.sprite.Sprite):
             self.kill()
 
         # Check collision with bots
-        if pygame.sprite.spritecollideany(self, bots):
-            bot_hit = pygame.sprite.spritecollideany(self, bots)
-            if bot_hit != self:
-                bot_hit.take_damage(15)
+        hit_bots = pygame.sprite.spritecollide(self, bots, False)
+        for bot in hit_bots:
+            if bot != self:
+                bot.take_damage(15)
                 self.kill()
+                break
 
 # Grenade class
 class Grenade(pygame.sprite.Sprite):
     def __init__(self, x, y, direction):
         super().__init__()
-        self.image = pygame.Surface((7, 7))
-        self.image.fill((0, 255, 0))  # Green grenade
+        self.image = pygame.Surface((14, 14), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, GREEN, (7,7), 7)
         self.rect = self.image.get_rect(center=(x, y))
         self.direction = direction.normalize()
         self.speed = 7
@@ -182,25 +258,34 @@ class EnergyMine(pygame.sprite.Sprite):
 
     def update(self):
         # Check for bots stepping on the mine
-        if pygame.sprite.spritecollideany(self, bots):
-            bot_hit = pygame.sprite.spritecollideany(self, bots)
-            if bot_hit != self:
-                bot_hit.take_damage(25)
+        hit_bots = pygame.sprite.spritecollide(self, bots, False)
+        for bot in hit_bots:
+            if bot != self:
+                bot.take_damage(25)
                 self.kill()
+                break
 
-# Sprite groups
-bots = pygame.sprite.Group()
-missiles = pygame.sprite.Group()
-zaps = pygame.sprite.Group()
-grenades = pygame.sprite.Group()
-energy_mines = pygame.sprite.Group()
+# Function to display buttons
+def draw_button(text, rect, inactive_color, active_color, font, mouse_pos):
+    if rect.collidepoint(mouse_pos):
+        color = active_color
+    else:
+        color = inactive_color
+    pygame.draw.rect(screen, color, rect)
+    text_surf = font.render(text, True, BLACK)
+    text_rect = text_surf.get_rect(center=rect.center)
+    screen.blit(text_surf, text_rect)
 
-# Create bots
-bot1 = Bot(100, HEIGHT // 2, (0, 0, 255))
-bot2 = Bot(WIDTH - 100, HEIGHT // 2, (255, 0, 0))
-
-bots.add(bot1)
-bots.add(bot2)
+# Function to create bots ensuring they don't overlap initially
+def create_bots():
+    global bot1, bot2
+    positions = [
+        (100, HEIGHT // 2),
+        (WIDTH - 100, HEIGHT // 2)
+    ]
+    bot1 = Bot(*positions[0], BLUE, bot_number=1)
+    bot2 = Bot(*positions[1], GREEN, bot_number=2)
+    bots.add(bot1, bot2)
 
 # Game state
 game_state = {
@@ -211,9 +296,14 @@ game_state = {
     'energy_mines': energy_mines
 }
 
+# Create initial bots
+create_bots()
+
 # Main game loop
 running = True
 turn_timer = 0  # 用于控制回合时间
+font = pygame.font.SysFont(None, 36)
+small_font = pygame.font.SysFont(None, 24)
 
 while running:
     clock.tick(60)  # Limit to 60 FPS
@@ -223,54 +313,104 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    # 每0.5秒进行一次更新
-    if turn_timer >= 500:  # 500毫秒
-        turn_timer = 0
+        if current_state == STATE_MENU:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = pygame.mouse.get_pos()
+                # Define button rectangles
+                start_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 60, 200, 50)
+                load_bot1_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2, 200, 50)
+                load_bot2_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 60, 200, 50)
 
-        # Update bots
-        bots.update()
+                if start_button.collidepoint(mouse_pos):
+                    current_state = STATE_GAME
+                elif load_bot1_button.collidepoint(mouse_pos):
+                    bot1_ai_module = load_ai(1)
+                    bot1.bot_logic = bot1_ai_module
+                elif load_bot2_button.collidepoint(mouse_pos):
+                    bot2_ai_module = load_ai(2)
+                    bot2.bot_logic = bot2_ai_module
 
-        # Update weapons
-        missiles.update()
-        zaps.update()
-        grenades.update()
-        energy_mines.update()
+    if current_state == STATE_MENU:
+        # Draw menu
+        screen.fill(BLACK)
+        title_surf = font.render("AIBots Battle", True, WHITE)
+        title_rect = title_surf.get_rect(center=(WIDTH//2, HEIGHT//2 - 150))
+        screen.blit(title_surf, title_rect)
 
-        # 检查是否有机器人被消灭
-        if len(bots) <= 1:
-            running = False
+        # Define button rectangles
+        start_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 60, 200, 50)
+        load_bot1_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2, 200, 50)
+        load_bot2_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 60, 200, 50)
 
-    # Draw everything
-    screen.fill(BLACK)
-    bots.draw(screen)
-    missiles.draw(screen)
-    zaps.draw(screen)
-    grenades.draw(screen)
-    energy_mines.draw(screen)
+        # Get mouse position
+        mouse_pos = pygame.mouse.get_pos()
 
-    # Display bot health and ammo
-    font = pygame.font.SysFont(None, 24)
-    if bot1.alive():
-        bot1_status = font.render(f'Bot1 Health: {bot1.health} Ammo: {bot1.ammo} Fuel: {int(bot1.fuel)}', True, WHITE)
-        screen.blit(bot1_status, (10, 10))
-    if bot2.alive():
-        bot2_status = font.render(f'Bot2 Health: {bot2.health} Ammo: {bot2.ammo} Fuel: {int(bot2.fuel)}', True, WHITE)
-        screen.blit(bot2_status, (WIDTH - 300, 10))
+        # Draw buttons
+        draw_button("Start", start_button, GREEN, (0, 200, 0), font, mouse_pos)
+        draw_button("Load Robot1 AI", load_bot1_button, BLUE, (0, 0, 200), font, mouse_pos)
+        draw_button("Load Robot2 AI", load_bot2_button, BLUE, (0, 0, 200), font, mouse_pos)
+
+    elif current_state == STATE_GAME:
+        # Handle game updates every 0.5 seconds
+        if turn_timer >= 500:  # 500 milliseconds
+            turn_timer = 0
+
+            # Update bots
+            bots.update()
+
+            # Update weapons
+            missiles.update()
+            zaps.update()
+            grenades.update()
+            energy_mines.update()
+
+            # Check if any bots are dead
+            if len(bots) <= 1:
+                current_state = 'end_game'
+                end_game_winner = None
+                if len(bots) == 1:
+                    end_game_winner = bots.sprites()[0].bot_number
+                elif len(bots) == 0:
+                    end_game_winner = None  # Draw
+
+        # Draw everything
+        screen.fill(BLACK)
+        bots.draw(screen)
+        missiles.draw(screen)
+        zaps.draw(screen)
+        grenades.draw(screen)
+        energy_mines.draw(screen)
+
+        # Display bot health and ammo
+        status_font = pygame.font.SysFont(None, 24)
+        if bot1.alive():
+            bot1_status = status_font.render(
+                f'Bot1 (Blue) Health: {bot1.health} Ammo: {bot1.ammo} Fuel: {int(bot1.fuel)}',
+                True, WHITE)
+            screen.blit(bot1_status, (10, 10))
+        if bot2.alive():
+            bot2_status = status_font.render(
+                f'Bot2 (Green) Health: {bot2.health} Ammo: {bot2.ammo} Fuel: {int(bot2.fuel)}',
+                True, WHITE)
+            screen.blit(bot2_status, (WIDTH - 300, 10))
+
+    elif current_state == 'end_game':
+        # Display victory information
+        screen.fill(BLACK)
+        font_large = pygame.font.SysFont(None, 48)
+        if end_game_winner == 1:
+            victory_text = font_large.render('Bot1 (Blue) Wins!', True, WHITE)
+        elif end_game_winner == 2:
+            victory_text = font_large.render('Bot2 (Green) Wins!', True, WHITE)
+        else:
+            victory_text = font_large.render('Draw!', True, WHITE)
+        victory_rect = victory_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+        screen.blit(victory_text, victory_rect)
+        pygame.display.flip()
+        pygame.time.wait(3000)
+        running = False
 
     pygame.display.flip()
-
-# 显示胜利信息
-screen.fill(BLACK)
-font = pygame.font.SysFont(None, 48)
-if bot1.alive():
-    victory_text = font.render('Bot1 Wins!', True, WHITE)
-elif bot2.alive():
-    victory_text = font.render('Bot2 Wins!', True, WHITE)
-else:
-    victory_text = font.render('Draw!', True, WHITE)
-screen.blit(victory_text, (WIDTH // 2 - 100, HEIGHT // 2))
-pygame.display.flip()
-pygame.time.wait(3000)
 
 pygame.quit()
 sys.exit()
