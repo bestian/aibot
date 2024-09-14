@@ -5,7 +5,6 @@ import random
 import os
 import importlib.util
 from pygame.locals import *
-from tkinter import Tk, filedialog
 
 from robots.bot1 import bot_logic
 
@@ -45,13 +44,8 @@ bot2_ai_module = bot_logic
 
 # Function to load AI scripts dynamically
 def load_ai(bot_number):
-    Tk().withdraw()  # Hide the root window
-    filepath = filedialog.askopenfilename(
-        initialdir='./robots',
-        title=f"Select AI script for Bot{bot_number}",
-        filetypes=(("Python Files", "*.py"),)
-    )
-    if filepath:
+    filepath = input(f"Enter the path of AI script for Bot{bot_number}: ")
+    if os.path.exists(filepath):
         module_name = f'bot{bot_number}_loaded'
         spec = importlib.util.spec_from_file_location(module_name, filepath)
         if spec and spec.loader:
@@ -66,7 +60,9 @@ def load_ai(bot_number):
         else:
             print(f"Failed to load module spec for Bot{bot_number}")
             return None
-    return None
+    else:
+        print("Invalid file path.")
+        return None
 
 # Bot class with visual enhancements
 class Bot(pygame.sprite.Sprite):
@@ -391,12 +387,12 @@ while running:
         status_font = pygame.font.SysFont(None, 24)
         if bot1.alive():
             bot1_status = status_font.render(
-                f'Bot1 (Blue) Health: {bot1.health} Ammo: {bot1.ammo} Fuel: {int(bot1.fuel)}',
+                f'Blue Health: {bot1.health} \nAmmo: {bot1.ammo} \nFuel: {int(bot1.fuel)}',
                 True, WHITE)
             screen.blit(bot1_status, (10, 10))
         if bot2.alive():
             bot2_status = status_font.render(
-                f'Bot2 (Green) Health: {bot2.health} Ammo: {bot2.ammo} Fuel: {int(bot2.fuel)}',
+                f'Green Health: {bot2.health} \nAmmo: {bot2.ammo} \nFuel: {int(bot2.fuel)}',
                 True, WHITE)
             screen.blit(bot2_status, (WIDTH - 300, 10))
 
